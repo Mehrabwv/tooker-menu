@@ -1,0 +1,15 @@
+{
+  "name": "tooker-menu",
+  "version": "1.0.0",
+  "description": "Phone web app + scraper for the ASU Tooker House Dining Hall menu (every meal period).",
+  "main": "scraper.js",
+  "scripts": {
+    "today": "node scraper.js",
+    "week": "node scraper.js --days 7",
+    "update-site": "node scraper.js --days 7 --all-stations --json docs/menu.json"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  },
+  "license": "MIT"
+}

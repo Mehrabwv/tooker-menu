@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Tooker Menu</title>
+  <meta name="description" content="Daily Tooker House Dining Hall menu: Home Zone, Pizza and True Balance.">
+  <meta name="theme-color" content="#8C1D40">
+
+  <!-- These make "Add to Home Screen" behave like a real app -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Tooker">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="title-row">
+      <h1>Tooker Menu</h1>
+      <button id="settingsBtn" class="icon-btn" type="button" aria-label="Choose stations">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path fill="currentColor" d="M3 6h11.2a3 3 0 0 1 5.6 0H21v2h-1.2a3 3 0 0 1-5.6 0H3V6zm14 2a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM3 16h3.2a3 3 0 0 1 5.6 0H21v2h-9.2a3 3 0 0 1-5.6 0H3v-2zm6 2a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
+        </svg>
+      </button>
+    </div>
+    <nav id="days" class="days" aria-label="Day"></nav>
+    <nav id="meals" class="meals" aria-label="Meal"></nav>
+  </header>
+
+  <main id="menu" aria-live="polite">
+    <p class="empty">Loading menu…</p>
+  </main>
+
+  <footer>
+    <p id="updated"></p>
+    <p>
+      Unofficial student project. Menu from
+      <a href="https://asu.mydininghub.com/en/tempe-campus/location/tooker-house-dining-hall">asu.mydininghub.com</a>,
+      refreshed daily. Check the official site for allergens and hours.
+    </p>
+  </footer>
+
+  <dialog id="settings" aria-labelledby="settingsTitle">
+    <form method="dialog">
+      <h2 id="settingsTitle">Show these stations</h2>
+      <div id="stationList" class="station-list"></div>
+      <label class="check">
+        <input type="checkbox" id="hideAlways">
+        <span>Hide always-available pizzas (cheese, pepperoni)</span>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="resetBtn" class="btn-ghost">Reset</button>
+        <button value="done" class="btn">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
