@@ -1,7 +1,7 @@
 {
-  "name": "Tooker Menu",
-  "short_name": "Tooker",
-  "description": "Daily Tooker House Dining Hall menu: Home Zone, Pizza and True Balance.",
+  "name": "Dining Hall Menus",
+  "short_name": "Dining Menus",
+  "description": "Daily menus for the ASU Tempe dining halls, with your favorite stations first.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -9,8 +9,23 @@
   "background_color": "#8c1d40",
   "theme_color": "#8c1d40",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

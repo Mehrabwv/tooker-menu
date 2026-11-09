@@ -1,8 +1,11 @@
-// Tooker Menu web app
-// Loads menu.json (written every morning by the GitHub Action) and shows it.
+// Dining Hall Menus web app
+// Loads menus/index.json (the list of halls) and menus/<hall>.json, which the
+// GitHub Action rewrites twice a day, and shows them.
 
 const TZ = 'America/Phoenix';
-const PREFS_KEY = 'tooker-prefs-v1';
+const PREFS_KEY = 'menu-prefs-v2';
+const OLD_PREFS_KEY = 'tooker-prefs-v1'; // from the Tooker-only version
+const DEFAULT_HALL = 'tooker-house-dining-hall';
 
 // Rough end time of each meal (minutes after midnight). Only used to open the
 // app on the meal that's being served right now.
@@ -12,13 +15,17 @@ const MEAL_ENDS = {
   'Limited Dinner': 20 * 60, 'Dinner': 20 * 60, 'Evening Snack': 23 * 60,
 };
 
-let data = null;
+let index = null;  // menus/index.json
+let halls = {};    // slug -> that hall's menu JSON, loaded when needed
 let lastLoad = 0;
-const state = { date: null, meal: null };
+const state = { hall: null, date: null, meal: null };
 let prefs = loadPrefs();
 
 const $ = (id) => document.getElementById(id);
 const norm = (s) => (s || '').trim().toLowerCase();
+const matchesAny = (name, keywords) => keywords.some((k) => norm(name).includes(norm(k)));
+const shortName = (name) => name.replace(/\s+Dining\s+(Hall|Center)$/i, '');
+const hall = () => halls[state.hall];
 
 // Small helper to build HTML elements safely (no innerHTML with menu text).
 function el(tag, props = {}, ...children) {
@@ -31,6 +38,7 @@ function el(tag, props = {}, ...children) {
   for (const c of children.flat()) if (c != null) node.append(c);
   return node;
 }
+const message = (text) => el('p', { class: 'empty' }, text);
 
 // ---------- time ----------
 function nowInPhoenix() {
@@ -57,33 +65,50 @@ function dayChip(iso, today) {
 
 // ---------- preferences (saved on this phone only) ----------
 function loadPrefs() {
+  const fresh = { hall: null, stations: {}, hideAlways: true };
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY));
-    if (p && typeof p === 'object') return { stations: p.stations ?? null, hideAlways: p.hideAlways ?? true };
+    if (p && typeof p === 'object') return { ...fresh, ...p, stations: p.stations || {} };
+    const old = JSON.parse(localStorage.getItem(OLD_PREFS_KEY));
+    if (old && typeof old === 'object') {
+      if (Array.isArray(old.stations)) fresh.stations[DEFAULT_HALL] = old.stations;
+      if (typeof old.hideAlways === 'boolean') fresh.hideAlways = old.hideAlways;
+    }
   } catch {}
-  return { stations: null, hideAlways: true };
+  return fresh;
 }
 function savePrefs() {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {}
 }
-const activeStations = () => prefs.stations ?? data?.preferences?.stations ?? [];
+
+// Every station name at the current hall, in the order the site lists them.
+function stationNames(h = hall()) {
+  const seen = new Map();
+  for (const d of h?.days || []) for (const m of d.meals) for (const s of m.stations) {
+    if (!seen.has(norm(s.station))) seen.set(norm(s.station), s.station);
+  }
+  return [...seen.values()];
+}
+
+// Stations shown at this hall: your picks for it, or the default keywords
+// ("Home Zone", "Pizza", "True Balance") matched against its station names.
+function activeStations() {
+  return prefs.stations[state.hall]
+    ?? stationNames().filter((name) => matchesAny(name, index?.preferences?.stations || []));
+}
 
 function visibleStations(meal) {
   const keep = new Set(activeStations().map(norm));
-  const skip = {};
-  if (prefs.hideAlways) {
-    for (const [st, items] of Object.entries(data?.preferences?.skipItems || {})) {
-      skip[norm(st)] = new Set(items.map(norm));
-    }
-  }
+  const skipRules = prefs.hideAlways ? Object.entries(index?.preferences?.skipItems || {}) : [];
   return meal.stations
     .filter((s) => keep.has(norm(s.station)))
     .map((s) => {
-      const sk = skip[norm(s.station)] || new Set();
+      const skip = new Set(skipRules.filter(([k]) => matchesAny(s.station, [k]))
+        .flatMap(([, items]) => items.map(norm)));
       return {
         ...s,
-        items: s.items.filter((i) => !sk.has(norm(i.name))),
-        extras: s.extras.filter((i) => !sk.has(norm(i.name))),
+        items: s.items.filter((i) => !skip.has(norm(i.name))),
+        extras: s.extras.filter((i) => !skip.has(norm(i.name))),
       };
     })
     .filter((s) => s.items.length || s.extras.length);
@@ -92,7 +117,7 @@ function visibleStations(meal) {
 // ---------- choosing what to show ----------
 const upcomingDays = () => {
   const today = nowInPhoenix().date;
-  return (data?.days || []).filter((d) => d.date >= today);
+  return (hall()?.days || []).filter((d) => d.date >= today);
 };
 
 function defaultMeal(day) {
@@ -111,6 +136,14 @@ function pickDefaults() {
 }
 
 // ---------- rendering ----------
+function renderHallPicker() {
+  $('hall').replaceChildren(...index.locations.map((l) => {
+    const opt = el('option', { value: l.slug }, shortName(l.name));
+    opt.selected = l.slug === state.hall;
+    return opt;
+  }));
+}
+
 function render() {
   const days = upcomingDays();
   const today = nowInPhoenix().date;
@@ -129,21 +162,23 @@ function render() {
     onclick: () => { state.meal = m.meal; render(); },
   }, m.meal)));
 
+  const h = hall();
+  if (h) {
+    $('updated').textContent = `${shortName(h.name)} menu updated ${new Date(h.updatedAt).toLocaleString('en-US', {
+      timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    })}`;
+    $('source').href = h.url;
+  }
+
   const menu = $('menu');
-  if (!data) return;
   if (!days.length) {
-    menu.replaceChildren(el('p', { class: 'empty' }, 'No upcoming menus in the saved data yet. Check back after the next daily update.'));
+    menu.replaceChildren(message('No upcoming menus saved for this hall yet. Check back after the next update.'));
     return;
   }
   const meal = day?.meals.find((m) => m.meal === state.meal);
-  if (!meal) {
-    menu.replaceChildren(el('p', { class: 'empty' }, 'No menu posted for this day.'));
-    return;
-  }
-  if (meal.note) {
-    menu.replaceChildren(el('p', { class: 'empty' }, 'No menu posted for this meal yet.'));
-    return;
-  }
+  if (!meal) { menu.replaceChildren(message('No menu posted for this day.')); return; }
+  if (meal.note) { menu.replaceChildren(message('No menu posted for this meal yet.')); return; }
+
   const stations = visibleStations(meal);
   if (!stations.length) {
     menu.replaceChildren(el('div', { class: 'empty' },
@@ -162,34 +197,18 @@ function render() {
       s.extras.map((e) => e.name).join(', ')) : null)));
 }
 
-function renderUpdated() {
-  if (!data?.scrapedAt) return;
-  const when = new Date(data.scrapedAt).toLocaleString('en-US', {
-    timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  });
-  $('updated').textContent = `Menu updated ${when}`;
-}
-
-// ---------- station settings ----------
-function allStationNames() {
-  const seen = new Map();
-  for (const d of data?.days || []) for (const m of d.meals) for (const s of m.stations) {
-    if (!seen.has(norm(s.station))) seen.set(norm(s.station), s.station);
-  }
-  for (const s of data?.preferences?.stations || []) if (!seen.has(norm(s))) seen.set(norm(s), s);
-  return [...seen.values()];
-}
-
+// ---------- station settings (per hall) ----------
 function openSettings() {
+  if (!hall()) return;
+  $('settingsTitle').textContent = `Stations at ${shortName(hall().name)}`;
   const active = new Set(activeStations().map(norm));
-  $('stationList').replaceChildren(...allStationNames().map((name) => {
+  $('stationList').replaceChildren(...stationNames().map((name) => {
     const box = el('input', { type: 'checkbox' });
     box.checked = active.has(norm(name));
     box.addEventListener('change', () => {
-      const set = new Set(activeStations());
-      for (const s of [...set]) if (norm(s) === norm(name)) set.delete(s);
-      if (box.checked) set.add(name);
-      prefs.stations = [...set];
+      const picked = activeStations().filter((s) => norm(s) !== norm(name));
+      if (box.checked) picked.push(name);
+      prefs.stations[state.hall] = picked;
       savePrefs(); render();
     });
     return el('label', { class: 'check' }, box, el('span', {}, name));
@@ -201,25 +220,59 @@ function openSettings() {
 $('settingsBtn').addEventListener('click', openSettings);
 $('hideAlways').addEventListener('change', (e) => { prefs.hideAlways = e.target.checked; savePrefs(); render(); });
 $('resetBtn').addEventListener('click', () => {
-  prefs = { stations: null, hideAlways: true };
+  delete prefs.stations[state.hall];
+  prefs.hideAlways = true;
   savePrefs(); $('settings').close(); render();
+});
+$('hall').addEventListener('change', (e) => {
+  prefs.hall = e.target.value;
+  savePrefs();
+  state.meal = null; // keep the same day if this hall has it
+  showHall(e.target.value);
 });
 
 // ---------- loading ----------
-async function load() {
-  try {
-    const res = await fetch('menu.json', { cache: 'no-cache' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    data = await res.json();
-    lastLoad = Date.now();
-    pickDefaults();
-    renderUpdated();
-    render();
-  } catch (err) {
-    if (!data) {
-      $('menu').replaceChildren(el('p', { class: 'empty' }, "Couldn't load the menu. Check your connection and reopen the app."));
+async function fetchJson(url) {
+  const res = await fetch(url, { cache: 'no-cache' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function loadHall(slug) {
+  const loc = index.locations.find((l) => l.slug === slug);
+  halls[slug] = await fetchJson(`menus/${loc.file}`);
+}
+
+async function showHall(slug) {
+  state.hall = slug;
+  if (!halls[slug]) {
+    $('meals').replaceChildren();
+    $('menu').replaceChildren(message('Loading menu…'));
+    try { await loadHall(slug); } catch {
+      if (state.hall === slug) $('menu').replaceChildren(message("Couldn't load this hall's menu. Check your connection."));
+      return;
     }
   }
+  if (state.hall !== slug) return; // picked another hall while this one loaded
+  pickDefaults();
+  render();
+}
+
+async function load() {
+  try {
+    index = await fetchJson('menus/index.json');
+  } catch {
+    if (!index) $('menu').replaceChildren(message("Couldn't load the menus. Check your connection and reopen the app."));
+    return;
+  }
+  lastLoad = Date.now();
+  halls = {};
+  const slugs = index.locations.map((l) => l.slug);
+  state.hall = [state.hall, prefs.hall, DEFAULT_HALL, slugs[0]].find((s) => slugs.includes(s));
+  renderHallPicker();
+  await showHall(state.hall);
+  // Fetch the other halls in the background so switching is instant (and works offline).
+  setTimeout(() => slugs.forEach((s) => halls[s] || loadHall(s).catch(() => {})), 1500);
 }
 
 // A home-screen app can stay open for days; refresh when it comes back.

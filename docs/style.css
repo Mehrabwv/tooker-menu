@@ -59,20 +59,44 @@ body {
   padding: 0 16px;
 }
 
+/* hall picker: small gold label + big tappable hall name */
+.hall-wrap { min-width: 0; }
+
 h1 {
   margin: 0;
-  font-size: 22px;
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  color: #fff;
+}
+.select-wrap select {
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 28px 0 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 24px;
+  font-weight: 700;
   letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  cursor: pointer;
 }
-h1::after {
-  content: "";
-  display: block;
-  width: 28px;
-  height: 3px;
-  margin-top: 3px;
-  border-radius: 2px;
-  background: var(--gold);
-}
+.select-wrap select:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 6px; }
+.select-wrap option { color: #1d1b1c; }
+.select-wrap svg { position: absolute; right: 0; pointer-events: none; }
 
 .icon-btn {
   display: grid;
