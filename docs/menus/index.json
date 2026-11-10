@@ -1,6 +1,6 @@
 {
  "source": "https://asu.mydininghub.com/en/tempe-campus",
- "scrapedAt": "2026-11-09T22:34:04.759Z",
+ "scrapedAt": "2026-11-10T03:40:35.549Z",
  "stationsFilter": "all",
  "preferences": {
   "stations": [
@@ -22,42 +22,42 @@
    "name": "Barrett Dining Center",
    "url": "https://asu.mydininghub.com/en/tempe-campus/location/barrett-dining-center",
    "file": "barrett-dining-center.json",
-   "updatedAt": "2026-11-09T22:34:04.759Z"
+   "updatedAt": "2026-11-10T03:40:35.549Z"
   },
   {
    "slug": "hassayampa-dining-hall",
    "name": "Hassayampa Dining Hall",
    "url": "https://asu.mydininghub.com/en/tempe-campus/location/hassayampa-dining-hall",
    "file": "hassayampa-dining-hall.json",
-   "updatedAt": "2026-11-09T22:34:04.759Z"
+   "updatedAt": "2026-11-10T03:40:35.549Z"
   },
   {
    "slug": "hida-dining-hall",
    "name": "HIDA Dining Hall",
    "url": "https://asu.mydininghub.com/en/tempe-campus/location/hida-dining-hall",
    "file": "hida-dining-hall.json",
-   "updatedAt": "2026-11-09T22:34:04.759Z"
+   "updatedAt": "2026-11-10T03:40:35.549Z"
   },
   {
    "slug": "manzanita-dining-hall",
    "name": "Manzanita Dining Hall",
    "url": "https://asu.mydininghub.com/en/tempe-campus/location/manzanita-dining-hall",
    "file": "manzanita-dining-hall.json",
-   "updatedAt": "2026-11-09T22:34:04.759Z"
+   "updatedAt": "2026-11-10T03:40:35.549Z"
   },
   {
    "slug": "pitchforks-dining-hall",
    "name": "Pitchforks Dining Hall",
    "url": "https://asu.mydininghub.com/en/tempe-campus/location/pitchforks-dining-hall",
    "file": "pitchforks-dining-hall.json",
-   "updatedAt": "2026-11-09T22:34:04.759Z"
+   "updatedAt": "2026-11-10T03:40:35.549Z"
   },
   {
    "slug": "tooker-house-dining-hall",
    "name": "Tooker House Dining Hall",
    "url": "https://asu.mydininghub.com/en/tempe-campus/location/tooker-house-dining-hall",
    "file": "tooker-house-dining-hall.json",
-   "updatedAt": "2026-11-09T22:34:04.759Z"
+   "updatedAt": "2026-11-10T03:40:35.549Z"
   }
  ]
 }
