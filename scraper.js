@@ -117,6 +117,70 @@ const pageDateLabel = (isoDate) =>
     weekday: 'short', month: 'short', day: '2-digit', timeZone: 'UTC',
   });
 
+// "Thu, Nov 12" -> "2026-11-12". The page leaves out the year, so use the year
+// that puts the date closest to today (handles December -> January).
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function parsePageDate(label, today) {
+  const m = (label || '').match(/([A-Z][a-z]{2})[a-z]*\.?\s+(\d{1,2})\b/);
+  const month = m ? MONTHS.indexOf(m[1]) : -1;
+  if (month < 0) return null;
+  const pad = (n) => String(n).padStart(2, '0');
+  const year = Number(today.slice(0, 4));
+  return [year - 1, year, year + 1]
+    .map((y) => `${y}-${pad(month + 1)}-${pad(Number(m[2]))}`)
+    .sort((a, b) => Math.abs(daysBetween(today, a)) - Math.abs(daysBetween(today, b)))[0];
+}
+
+// ---------- opening hours ----------
+// Each hall's page embeds its schedule: one "standard" week plus "special"
+// date ranges (holidays, breaks) that replace it. Each meal period's hours use
+// the OpenStreetMap style, e.g. "Mo-Th 16:30-20:00; Fr-Su 16:30-19:00" or "We off".
+const DAY_CODES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']; // same order as getUTCDay()
+
+function expandDays(spec) { // "Mo-Fr" / "Sa-Su" / "Mo,We" -> set of weekday numbers
+  const days = new Set();
+  for (const part of spec.split(',')) {
+    const [a, b] = part.trim().split('-');
+    const from = DAY_CODES.indexOf(a);
+    const to = b ? DAY_CODES.indexOf(b) : from;
+    if (from < 0 || to < 0) continue;
+    for (let d = from; ; d = (d + 1) % 7) { days.add(d); if (d === to) break; }
+  }
+  return days;
+}
+
+function timesOn(openingHours, weekday) { // -> [{ from: '07:00', to: '11:00' }, ...]
+  let ranges = [];
+  for (const rule of (openingHours || '').split(';').map((r) => r.trim()).filter(Boolean)) {
+    const m = rule.match(/^((?:Mo|Tu|We|Th|Fr|Sa|Su)[A-Za-z,-]*)\s+(.+)$/);
+    const days = m ? m[1] : null;
+    const times = m ? m[2] : rule;
+    if (days && !expandDays(days).has(weekday)) continue;
+    if (!days && !/^\d/.test(times)) continue; // e.g. "PH off" (public holidays)
+    // A later rule for the same day replaces an earlier one.
+    ranges = /^(off|closed)$/i.test(times) ? [] : times.split(',')
+      .map((t) => t.trim().match(/^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/))
+      .filter(Boolean)
+      .map(([, from, to]) => ({ from: from.padStart(5, '0'), to: to.padStart(5, '0') }));
+  }
+  return ranges;
+}
+
+// Hours for one date: { special: 'Veterans Day' | null, meals: [{ meal, from, to }] }.
+// An empty meals list means the hall is closed that day. null = schedule unknown.
+function hoursFor(schedule, date) {
+  if (!Array.isArray(schedule)) return null;
+  const special = schedule.filter((s) => s.type === 'special' && s.start_date && s.end_date
+    && s.start_date <= date && date <= s.end_date).pop();
+  const sched = special || schedule.find((s) => s.type === 'standard');
+  if (!sched) return null;
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+  const meals = (sched.meal_periods || [])
+    .flatMap((mp) => timesOn(mp.opening_hours, weekday).map((r) => ({ meal: mp.meal_period, ...r })))
+    .sort((a, b) => a.from.localeCompare(b.from));
+  return { special: special ? special.name : null, meals };
+}
+
 // ---------- filtering ----------
 const norm = (s) => (s || '').trim().toLowerCase();
 const matchesAny = (station, keywords) => keywords.some((k) => norm(station).includes(norm(k)));
@@ -169,6 +233,36 @@ async function findDiningHalls(browser) {
 // ---------- page helpers ----------
 const mealButton = (page) =>
   page.locator('button[aria-haspopup="listbox"]', { hasText: 'Meal:' }).first();
+
+// The date the menu viewer is showing, e.g. "Thu, Nov 12" (between the arrows).
+const DATE_HEADING_JS = () => document.querySelector('button[aria-label="Next Date"]')
+  ?.parentElement?.querySelector('h2')?.innerText?.trim() || '';
+const pageDateText = (page) => page.evaluate(DATE_HEADING_JS);
+
+// Read the opening-hours schedule embedded in the page's data (null if missing).
+async function readHoursSchedule(page) {
+  return page.evaluate(() => {
+    const text = (self.__next_f || []).map((x) => (typeof x[1] === 'string' ? x[1] : '')).join('');
+    const at = text.indexOf('AEM_HoursOfOperationModel');
+    if (at < 0) return null;
+    // Cut out the {...} object around it, skipping braces inside strings.
+    const start = text.lastIndexOf('{', at);
+    let depth = 0; let inString = false; let escaped = false;
+    for (let i = start; i < text.length; i++) {
+      const c = text[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (c === '\\') escaped = true;
+        else if (c === '"') inString = false;
+      } else if (c === '"') inString = true;
+      else if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) {
+        try { return JSON.parse(text.slice(start, i + 1)).schedule || null; } catch { return null; }
+      }
+    }
+    return null;
+  });
+}
 
 async function closePopups(page) {
   // The "Dining With Us?" email sign-up box and a cookie banner can cover the menu.
@@ -232,13 +326,18 @@ async function selectMeal(page, mealName) {
     page.getByRole('option', { name: mealName, exact: true }).click());
 }
 
-async function goToNextDay(page, expectedLabel) {
+// Click "Next Date". The site jumps to the next date that HAS a menu, which may
+// skip several days (e.g. when the hall is closed), so callers must re-read the date.
+async function goToNextDay(page) {
   await closePopups(page);
   const next = page.getByRole('button', { name: 'Next Date' });
-  if (await next.isDisabled()) return false; // no menus published that far ahead
+  if (await next.isDisabled()) return false; // no menus published past this date
+  const before = await pageDateText(page);
   await doAndWaitForMenu(page, () => next.click());
-  await page.locator('h2', { hasText: expectedLabel }).first()
-    .waitFor({ timeout: 15000 }).catch(() => {});
+  // Wait for the date heading to change.
+  await page.waitForFunction((prev) => (document.querySelector('button[aria-label="Next Date"]')
+    ?.parentElement?.querySelector('h2')?.innerText?.trim() || '') !== prev, before, { timeout: 15000 })
+    .catch(() => {});
   return true;
 }
 
@@ -291,31 +390,56 @@ async function scrapeLocation(browser, hall, opts, today) {
     result.name = (await page.locator('h1').first().innerText().catch(() => '')).trim() || hall.name;
     await closePopups(page);
 
-    // Step forward from today to the start date, one day at a time.
-    for (let i = 1; i <= daysBetween(today, opts.startDate); i++) {
-      if (!(await goToNextDay(page, pageDateLabel(addDays(today, i))))) {
-        throw new Error(`no menus published for ${opts.startDate} yet`);
-      }
-    }
+    const schedule = await readHoursSchedule(page).catch(() => null);
+    if (!schedule) console.log(`${tag} (couldn't find opening hours on the page)`);
+
+    // The date the menu viewer is on. It is NOT always today: when the hall is
+    // closed, the site starts at (and "Next Date" jumps to) the next date with a menu.
+    const shownDate = async () => {
+      const text = await pageDateText(page);
+      const iso = parsePageDate(text, today);
+      if (!iso) throw new Error(`couldn't read the menu's date ("${text}")`);
+      return iso;
+    };
+    let shown = await shownDate();
 
     for (let d = 0; d < opts.days; d++) {
       const date = addDays(opts.startDate, d);
       try {
-        if (d > 0 && !(await goToNextDay(page, pageDateLabel(date)))) {
+        // Move forward until the viewer is on this date or past it (null = no more menus).
+        for (let hops = 0; shown && shown < date; hops++) {
+          if (hops > 14) throw new Error('date navigation got stuck');
+          shown = (await goToNextDay(page)) ? await shownDate() : null;
+        }
+
+        const day = { date, label: pageDateLabel(date), meals: [] };
+        const hours = hoursFor(schedule, date);
+        if (hours) {
+          day.hours = hours.meals;
+          if (hours.special) day.special = hours.special;
+          if (!hours.meals.length) day.closed = true;
+        }
+
+        if (shown === date) {
+          for (const meal of await getMealOptions(page)) {
+            await selectMeal(page, meal);
+            // The site sometimes lists a meal period but hasn't posted its menu yet.
+            const noMenu = await page.getByText('no menus available for this meal period')
+              .first().isVisible().catch(() => false);
+            const stations = noMenu ? [] : filterStations(await readMenu(page), opts.allStations);
+            day.meals.push({ meal, ...(noMenu && { note: NO_MENU_NOTE }), stations });
+          }
+        } else if (!shown && !day.closed) {
+          // Past the last published menu, and not a known closed day: stop here.
           console.log(`${tag} no menus published past ${addDays(date, -1)}`);
           break;
         }
-        const day = { date, label: pageDateLabel(date), meals: [] };
-        for (const meal of await getMealOptions(page)) {
-          await selectMeal(page, meal);
-          // The site sometimes lists a meal period but hasn't posted its menu yet.
-          const noMenu = await page.getByText('no menus available for this meal period')
-            .first().isVisible().catch(() => false);
-          const stations = noMenu ? [] : filterStations(await readMenu(page), opts.allStations);
-          day.meals.push({ meal, ...(noMenu && { note: NO_MENU_NOTE }), stations });
-        }
+        // (Otherwise the site skipped this date: no menu, usually because it's closed.)
+
         result.days.push(day);
-        console.log(`${tag} ${day.label}: ${day.meals.map((m) => m.meal).join(', ') || 'no menus'}`);
+        const what = day.closed ? `CLOSED${day.special ? ` (${day.special})` : ''}`
+          : day.meals.map((m) => m.meal).join(', ') || 'no menu posted';
+        console.log(`${tag} ${day.label}: ${what}`);
       } catch (err) {
         // Keep the days we already have instead of losing everything.
         console.error(`${tag} stopped at ${date}: ${err.message}`);
@@ -357,8 +481,12 @@ function toMarkdown(meta, locations) {
     lines.push(`## ${loc.name}`, '');
     if (loc.error && !loc.days.length) lines.push(`_Couldn't scrape this hall: ${loc.error}_`, '');
     for (const day of loc.days) {
-      lines.push(`### ${day.label} (${day.date})`, '');
-      if (!day.meals.length) lines.push('_No menu published for this day._', '');
+      lines.push(`### ${day.label} (${day.date})${day.special ? ` — ${day.special}` : ''}`, '');
+      if (day.closed) lines.push('_Closed._', '');
+      else if (day.hours?.length) {
+        lines.push(`Hours: ${day.hours.map((h) => `${h.meal} ${h.from}–${h.to}`).join(', ')}`, '');
+      }
+      if (!day.meals.length && !day.closed) lines.push('_No menu published for this day._', '');
       for (const meal of day.meals) {
         lines.push(`#### ${meal.meal}`, '');
         if (meal.note) { lines.push(`_${meal.note}._`, ''); continue; }
@@ -381,6 +509,10 @@ function toMarkdown(meta, locations) {
 
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
 
+// Bump when the saved format changes, so older files aren't merged in.
+// (2 = dates read from the page, closed days and opening hours included.)
+const FORMAT_VERSION = 2;
+
 // Website mode: one JSON file per hall plus index.json listing the halls.
 // If a hall (or some of its days) failed this run, the previous data is kept.
 function writeWebsiteFiles(dir, meta, locations, today) {
@@ -390,14 +522,15 @@ function writeWebsiteFiles(dir, meta, locations, today) {
 
   for (const loc of locations) {
     const file = `${loc.slug}.json`;
-    const previous = readJson(path.join(dir, file)) || {};
+    let previous = readJson(path.join(dir, file)) || {};
+    if (previous.formatVersion !== FORMAT_VERSION) previous = {};
     const have = new Set(loc.days.map((d) => d.date));
     const days = [...loc.days, ...(previous.days || []).filter((d) => d.date >= today && !have.has(d.date))]
       .sort((a, b) => a.date.localeCompare(b.date));
     if (!days.length) continue;
     const updatedAt = loc.days.length ? meta.scrapedAt : previous.updatedAt;
     fs.writeFileSync(path.join(dir, file),
-      JSON.stringify({ slug: loc.slug, name: loc.name, url: loc.url, updatedAt, days }));
+      JSON.stringify({ formatVersion: FORMAT_VERSION, slug: loc.slug, name: loc.name, url: loc.url, updatedAt, days }));
     index.locations.push({ slug: loc.slug, name: loc.name, url: loc.url, file, updatedAt });
   }
   // Keep halls that weren't part of this run (e.g. when --location was used).

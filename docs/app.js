@@ -31,6 +31,7 @@ const hall = () => halls[state.hall];
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
+    if (v == null) continue;
     if (k === 'class') node.className = v;
     else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
     else node.setAttribute(k, v);
@@ -53,7 +54,20 @@ function nowInPhoenix() {
   };
 }
 
+const toMinutes = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+function fmtTime(hhmm) { // "16:30" -> "4:30 PM", "07:00" -> "7 AM"
+  const [h, m] = hhmm.split(':').map(Number);
+  return `${h % 12 || 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${h % 24 < 12 ? 'AM' : 'PM'}`;
+}
+
 const asDate = (iso) => new Date(`${iso}T12:00:00Z`);
+function relDay(iso) { // "today" / "tomorrow" / "Thursday"
+  const diff = Math.round((asDate(iso) - asDate(nowInPhoenix().date)) / 86400000);
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'tomorrow';
+  return asDate(iso).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+}
+
 function dayChip(iso, today) {
   const diff = Math.round((asDate(iso) - asDate(today)) / 86400000);
   const wk = asDate(iso).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
@@ -120,12 +134,51 @@ const upcomingDays = () => {
   return (hall()?.days || []).filter((d) => d.date >= today);
 };
 
+// Opening hours for one meal on one day, e.g. { meal, from: '16:30', to: '20:00' }.
+const mealHours = (day, meal) => day?.hours?.find((h) => norm(h.meal) === norm(meal));
+
 function defaultMeal(day) {
   if (!day?.meals.length) return null;
   const now = nowInPhoenix();
   if (day.date !== now.date) return day.meals[0].meal;
-  const current = day.meals.find((m) => (MEAL_ENDS[m.meal] ?? 24 * 60) > now.minutes);
+  const endsAt = (m) => {
+    const h = mealHours(day, m.meal);
+    return h ? toMinutes(h.to) : (MEAL_ENDS[m.meal] ?? 24 * 60);
+  };
+  const current = day.meals.find((m) => endsAt(m) > now.minutes);
   return (current || day.meals[day.meals.length - 1]).meal;
+}
+
+// When the hall next opens after the current moment, e.g. "at 4:30 PM" or
+// "Thursday at 7 AM" (null if not in the saved days).
+function nextOpening(afterDate, afterMinutes) {
+  for (const d of upcomingDays()) {
+    if (d.date < afterDate) continue;
+    const h = (d.hours || []).find((x) => d.date > afterDate || toMinutes(x.from) > afterMinutes);
+    if (h) return d.date === nowInPhoenix().date ? `at ${fmtTime(h.from)}` : `${relDay(d.date)} at ${fmtTime(h.from)}`;
+  }
+  return null;
+}
+
+// "Open now · Dinner until 8 PM" or "Closed now · Opens tomorrow at 7 AM".
+function hallStatus() {
+  const now = nowInPhoenix();
+  const today = upcomingDays().find((d) => d.date === now.date);
+  if (!today || (!today.hours && !today.closed)) return null; // hours unknown
+  const open = (today.hours || []).find((h) => toMinutes(h.from) <= now.minutes && now.minutes < toMinutes(h.to));
+  if (open) return { open: true, text: `Open now · ${open.meal} until ${fmtTime(open.to)}` };
+  const prefix = today.closed ? `Closed today${today.special ? ` (${today.special})` : ''}` : 'Closed now';
+  const next = nextOpening(now.date, now.minutes);
+  return { open: false, text: next ? `${prefix} · Opens ${next}` : prefix };
+}
+
+function closedNotice(day) {
+  const when = relDay(day.date);
+  const next = nextOpening(day.date, 24 * 60);
+  return el('div', { class: 'notice', role: 'status' },
+    el('strong', {}, `${shortName(hall().name)} is closed ${/^(today|tomorrow)$/.test(when) ? when : `on ${when}`}`),
+    day.special ? el('span', {}, day.special) : null,
+    next ? el('span', {}, `Opens ${next}`) : null);
 }
 
 function pickDefaults() {
@@ -137,11 +190,23 @@ function pickDefaults() {
 
 // ---------- rendering ----------
 function renderHallPicker() {
+  const today = nowInPhoenix().date;
   $('hall').replaceChildren(...index.locations.map((l) => {
-    const opt = el('option', { value: l.slug }, shortName(l.name));
+    const closedToday = halls[l.slug]?.days?.find((d) => d.date === today)?.closed;
+    const opt = el('option', { value: l.slug }, shortName(l.name) + (closedToday ? ' (closed today)' : ''));
     opt.selected = l.slug === state.hall;
     return opt;
   }));
+}
+
+function renderStatus() {
+  const st = hall() ? hallStatus() : null;
+  const p = $('status');
+  p.hidden = !st;
+  if (st) {
+    p.textContent = st.text;
+    p.className = `status ${st.open ? 'open' : 'closed'}`;
+  }
 }
 
 function render() {
@@ -151,10 +216,12 @@ function render() {
   $('days').replaceChildren(...days.map((d) => {
     const [top, num] = dayChip(d.date, today);
     return el('button', {
-      class: 'day', type: 'button', 'aria-pressed': String(d.date === state.date),
+      class: d.closed ? 'day closed' : 'day', type: 'button', 'aria-pressed': String(d.date === state.date),
+      'aria-label': d.closed ? `${top} ${num}, closed` : null,
       onclick: () => { state.date = d.date; state.meal = null; pickDefaults(); render(); },
     }, top, el('b', {}, String(num)));
   }));
+  renderStatus();
 
   const day = days.find((d) => d.date === state.date);
   $('meals').replaceChildren(...(day?.meals || []).map((m) => el('button', {
@@ -175,18 +242,24 @@ function render() {
     menu.replaceChildren(message('No upcoming menus saved for this hall yet. Check back after the next update.'));
     return;
   }
+  // A closed day gets a notice at the top (and any menu the site still posted below it).
+  const top = day?.closed ? [closedNotice(day)] : [];
+  const show = (...nodes) => menu.replaceChildren(...top, ...nodes.filter(Boolean));
+
   const meal = day?.meals.find((m) => m.meal === state.meal);
-  if (!meal) { menu.replaceChildren(message('No menu posted for this day.')); return; }
-  if (meal.note) { menu.replaceChildren(message('No menu posted for this meal yet.')); return; }
+  if (!meal) { show(top.length ? null : message('No menu posted for this day.')); return; }
+  const mh = mealHours(day, meal.meal);
+  const hoursLine = mh ? el('p', { class: 'meal-hours' }, `${meal.meal} · ${fmtTime(mh.from)} – ${fmtTime(mh.to)}`) : null;
+  if (meal.note) { show(hoursLine, message('No menu posted for this meal yet.')); return; }
 
   const stations = visibleStations(meal);
   if (!stations.length) {
-    menu.replaceChildren(el('div', { class: 'empty' },
+    show(hoursLine, el('div', { class: 'empty' },
       el('p', {}, `Nothing from your stations at ${meal.meal}.`),
       el('button', { class: 'btn', type: 'button', onclick: openSettings }, 'Choose stations')));
     return;
   }
-  menu.replaceChildren(...stations.map((s) => el('section', { class: 'station' },
+  show(hoursLine, ...stations.map((s) => el('section', { class: 'station' },
     el('h2', {}, s.station),
     s.items.length ? el('ul', { class: 'items' }, s.items.map((i) => el('li', { class: 'item' },
       el('div', { class: 'item-head' },
@@ -241,6 +314,7 @@ async function fetchJson(url) {
 async function loadHall(slug) {
   const loc = index.locations.find((l) => l.slug === slug);
   halls[slug] = await fetchJson(`menus/${loc.file}`);
+  renderHallPicker(); // adds "(closed today)" labels as halls load
 }
 
 async function showHall(slug) {
@@ -280,6 +354,9 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   if (Date.now() - lastLoad > 30 * 60 * 1000) { state.date = null; state.meal = null; load(); }
 });
+
+// Keep "Open now / Closed now" current while the app stays open.
+setInterval(() => { if (document.visibilityState === 'visible') renderStatus(); }, 60 * 1000);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});

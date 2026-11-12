@@ -98,6 +98,52 @@ h1 {
 .select-wrap option { color: #1d1b1c; }
 .select-wrap svg { position: absolute; right: 0; pointer-events: none; }
 
+/* "Open now · Dinner until 8 PM" / "Closed now · Opens at 7 AM" */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  font-weight: 600;
+}
+.status[hidden] { display: none; }
+.status::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff8a8a;
+}
+.status.open::before { background: #6ee7a0; }
+
+.day.closed { opacity: 0.55; }
+.day.closed b { text-decoration: line-through; text-decoration-thickness: 2px; }
+.day.closed[aria-pressed="true"] { opacity: 1; }
+
+.meal-hours {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.notice {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 14px;
+}
+.notice strong { color: var(--text); font-size: 16px; }
+
 .icon-btn {
   display: grid;
   place-items: center;
