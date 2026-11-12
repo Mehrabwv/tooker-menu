@@ -192,7 +192,8 @@ function pickDefaults() {
 function renderHallPicker() {
   const today = nowInPhoenix().date;
   $('hall').replaceChildren(...index.locations.map((l) => {
-    const closedToday = halls[l.slug]?.days?.find((d) => d.date === today)?.closed;
+    // Not on the selected hall: its status line already says so.
+    const closedToday = l.slug !== state.hall && halls[l.slug]?.days?.find((d) => d.date === today)?.closed;
     const opt = el('option', { value: l.slug }, shortName(l.name) + (closedToday ? ' (closed today)' : ''));
     opt.selected = l.slug === state.hall;
     return opt;
@@ -319,6 +320,7 @@ async function loadHall(slug) {
 
 async function showHall(slug) {
   state.hall = slug;
+  if (index) renderHallPicker();
   if (!halls[slug]) {
     $('meals').replaceChildren();
     $('menu').replaceChildren(message('Loading menu…'));

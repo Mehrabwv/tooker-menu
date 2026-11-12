@@ -15,6 +15,10 @@ By default each hall shows the stations whose names contain:
 Use the ⚙ button to choose different stations. Your choice is remembered separately
 for each hall, on your phone.
 
+It also shows whether the hall is **open right now** ("Open now · Dinner until 8 PM" /
+"Closed now · Opens tomorrow at 7 AM"), each meal's hours, and **closed days** such as
+holidays and breaks, using the opening-hours schedule published on each hall's page.
+
 **Live site:** https://mehrabwv.github.io/tooker-menu/
 
 > Unofficial student project. Menu data comes from
