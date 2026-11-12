@@ -242,7 +242,12 @@ const pageDateText = (page) => page.evaluate(DATE_HEADING_JS);
 // Read the opening-hours schedule embedded in the page's data (null if missing).
 async function readHoursSchedule(page) {
   return page.evaluate(() => {
-    const text = (self.__next_f || []).map((x) => (typeof x[1] === 'string' ? x[1] : '')).join('');
+    // Next.js puts the page's data in <script>self.__next_f.push([1,"..."])</script>
+    // tags (the self.__next_f array itself is emptied once the page starts up).
+    const text = [...document.scripts].map((s) => {
+      const m = s.textContent.match(/^\s*self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)\s*;?\s*$/s);
+      try { return m ? JSON.parse(m[1]) : ''; } catch { return ''; }
+    }).join('');
     const at = text.indexOf('AEM_HoursOfOperationModel');
     if (at < 0) return null;
     // Cut out the {...} object around it, skipping braces inside strings.
