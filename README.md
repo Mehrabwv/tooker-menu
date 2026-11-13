@@ -24,6 +24,21 @@ holidays and breaks, using the opening-hours schedule published on each hall's p
 > Unofficial student project. Menu data comes from
 > [asu.mydininghub.com](https://asu.mydininghub.com/en/tempe-campus/locations?cat=Dining+Halls).
 
+## Food restrictions
+
+The ⚙ button also has a **Food restrictions** section that applies at every hall:
+
+- **Hide dishes with:** beef, pork, chicken & turkey, fish & shellfish
+- **Hide dishes containing these allergens:** eggs, fish, milk, peanuts, sesame, shellfish,
+  soy, tree nuts, wheat (the nine the ASU dining site tracks)
+- **Only show dishes labeled:** vegetarian, vegan, gluten free, halal
+
+Allergen and diet labels are the dining site's own. Beef, pork, poultry and seafood are
+worked out by `tagsFor()` in `scraper.js` from each dish's name, description and
+ingredient list, so they are best effort. Dishes whose allergen list the site marks as
+incomplete are shown with a warning instead of being hidden. This is a convenience
+filter, not a safety guarantee: with an allergy, always confirm with dining hall staff.
+
 ## Put it on your phone like an app
 
 - **iPhone (Safari):** open the live site → **Share** button → **Add to Home Screen** → Add.

@@ -79,10 +79,12 @@ function dayChip(iso, today) {
 
 // ---------- preferences (saved on this phone only) ----------
 function loadPrefs() {
-  const fresh = { hall: null, stations: {}, hideAlways: true };
+  const fresh = { hall: null, stations: {}, hideAlways: true, avoid: [], require: [] };
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY));
-    if (p && typeof p === 'object') return { ...fresh, ...p, stations: p.stations || {} };
+    if (p && typeof p === 'object') {
+      return { ...fresh, ...p, stations: p.stations || {}, avoid: p.avoid || [], require: p.require || [] };
+    }
     const old = JSON.parse(localStorage.getItem(OLD_PREFS_KEY));
     if (old && typeof old === 'object') {
       if (Array.isArray(old.stations)) fresh.stations[DEFAULT_HALL] = old.stations;
@@ -111,7 +113,40 @@ function activeStations() {
     ?? stationNames().filter((name) => matchesAny(name, index?.preferences?.stations || []));
 }
 
+// ---------- food restrictions (apply at every hall) ----------
+// Each dish in the saved menus has tags like "beef", "milk", "vegan". The
+// allergen and diet tags are the dining site's own labels; the meat tags are
+// worked out from the dish name, description and ingredient list.
+const RESTRICTIONS = {
+  meats: [['beef', 'Beef'], ['pork', 'Pork'], ['poultry', 'Chicken & turkey'], ['seafood', 'Fish & shellfish']],
+  allergens: [['egg', 'Eggs'], ['fish', 'Fish'], ['milk', 'Milk'], ['peanut', 'Peanuts'], ['sesame', 'Sesame'],
+    ['shellfish', 'Shellfish'], ['soy', 'Soy'], ['treenut', 'Tree nuts'], ['wheat', 'Wheat']],
+  diets: [['vegetarian', 'Vegetarian'], ['vegan', 'Vegan'], ['gf', 'Gluten free'], ['halal', 'Halal']],
+};
+const ALLERGEN_CODES = new Set(RESTRICTIONS.allergens.map(([code]) => code));
+const hasRestrictions = () => prefs.avoid.length > 0 || prefs.require.length > 0;
+
+// 'hide' = conflicts with your restrictions, 'warn' = can't be sure, 'ok' = fine.
+function checkDish(dish) {
+  if (!hasRestrictions()) return 'ok';
+  const tags = dish.tags;
+  if (!tags) return 'warn'; // menu saved before tags existed
+  if (prefs.avoid.some((t) => tags.includes(t))) return 'hide';
+  if (prefs.require.some((t) => !tags.includes(t))) return 'hide';
+  // The site says this dish's allergen list is incomplete.
+  if (tags.includes('allergen?') && prefs.avoid.some((t) => ALLERGEN_CODES.has(t))) return 'warn';
+  return 'ok';
+}
+
+let hiddenCount = 0; // dishes hidden by restrictions in the meal on screen
+
 function visibleStations(meal) {
+  hiddenCount = 0;
+  const allowed = (list) => list.flatMap((dish) => {
+    const verdict = checkDish(dish);
+    if (verdict === 'hide') { hiddenCount++; return []; }
+    return [verdict === 'warn' ? { ...dish, warn: true } : dish];
+  });
   const keep = new Set(activeStations().map(norm));
   const skipRules = prefs.hideAlways ? Object.entries(index?.preferences?.skipItems || {}) : [];
   return meal.stations
@@ -121,8 +156,8 @@ function visibleStations(meal) {
         .flatMap(([, items]) => items.map(norm)));
       return {
         ...s,
-        items: s.items.filter((i) => !skip.has(norm(i.name))),
-        extras: s.extras.filter((i) => !skip.has(norm(i.name))),
+        items: allowed(s.items.filter((i) => !skip.has(norm(i.name)))),
+        extras: allowed(s.extras.filter((i) => !skip.has(norm(i.name)))),
       };
     })
     .filter((s) => s.items.length || s.extras.length);
@@ -201,6 +236,7 @@ function renderHallPicker() {
 }
 
 function renderStatus() {
+  $('settingsBtn').classList.toggle('active', hasRestrictions());
   const st = hall() ? hallStatus() : null;
   const p = $('status');
   p.hidden = !st;
@@ -254,21 +290,35 @@ function render() {
   if (meal.note) { show(hoursLine, message('No menu posted for this meal yet.')); return; }
 
   const stations = visibleStations(meal);
+  const hiddenNote = hiddenCount ? el('p', { class: 'hidden-note' },
+    `${hiddenCount} ${hiddenCount === 1 ? 'dish' : 'dishes'} hidden by your food restrictions. `,
+    el('button', { class: 'link', type: 'button', onclick: openSettings }, 'Change')) : null;
   if (!stations.length) {
     show(hoursLine, el('div', { class: 'empty' },
-      el('p', {}, `Nothing from your stations at ${meal.meal}.`),
-      el('button', { class: 'btn', type: 'button', onclick: openSettings }, 'Choose stations')));
+      el('p', {}, hiddenCount ? `Nothing at ${meal.meal} fits your food restrictions at these stations.`
+        : `Nothing from your stations at ${meal.meal}.`),
+      el('button', { class: 'btn', type: 'button', onclick: openSettings }, 'Change settings')));
     return;
   }
+  const badges = (dish) => {
+    const t = dish.tags || [];
+    const list = [t.includes('vegan') ? 'Vegan' : t.includes('vegetarian') ? 'Vegetarian' : null,
+      t.includes('gf') ? 'Gluten free' : null, t.includes('halal') ? 'Halal' : null].filter(Boolean);
+    return list.length ? el('p', { class: 'badges' }, list.map((b) => el('span', {}, b))) : null;
+  };
+  const warning = (dish) => (dish.warn
+    ? el('p', { class: 'warn' }, 'Allergen info not available for this dish. Ask the staff.') : null);
   show(hoursLine, ...stations.map((s) => el('section', { class: 'station' },
     el('h2', {}, s.station),
     s.items.length ? el('ul', { class: 'items' }, s.items.map((i) => el('li', { class: 'item' },
       el('div', { class: 'item-head' },
         el('span', { class: 'name' }, i.name),
         i.calories != null ? el('span', { class: 'cal' }, `${i.calories} cal`) : null),
-      i.description ? el('p', { class: 'desc' }, i.description) : null))) : null,
+      i.description ? el('p', { class: 'desc' }, i.description) : null,
+      badges(i), warning(i)))) : null,
     s.extras.length ? el('p', { class: 'extras' }, el('b', {}, 'Also: '),
-      s.extras.map((e) => e.name).join(', ')) : null)));
+      s.extras.map((e) => e.name + (e.warn ? ' (allergen info not available)' : '')).join(', ')) : null)),
+  hiddenNote);
 }
 
 // ---------- station settings (per hall) ----------
@@ -288,6 +338,19 @@ function openSettings() {
     return el('label', { class: 'check' }, box, el('span', {}, name));
   }));
   $('hideAlways').checked = prefs.hideAlways;
+  const group = (id, options, list) => $(id).replaceChildren(...options.map(([code, label]) => {
+    const box = el('input', { type: 'checkbox' });
+    box.checked = prefs[list].includes(code);
+    box.addEventListener('change', () => {
+      prefs[list] = prefs[list].filter((c) => c !== code);
+      if (box.checked) prefs[list].push(code);
+      savePrefs(); render();
+    });
+    return el('label', { class: 'check' }, box, el('span', {}, label));
+  }));
+  group('avoidMeats', RESTRICTIONS.meats, 'avoid');
+  group('avoidAllergens', RESTRICTIONS.allergens, 'avoid');
+  group('requireDiets', RESTRICTIONS.diets, 'require');
   $('settings').showModal();
 }
 
@@ -296,6 +359,8 @@ $('hideAlways').addEventListener('change', (e) => { prefs.hideAlways = e.target.
 $('resetBtn').addEventListener('click', () => {
   delete prefs.stations[state.hall];
   prefs.hideAlways = true;
+  prefs.avoid = [];
+  prefs.require = [];
   savePrefs(); $('settings').close(); render();
 });
 $('hall').addEventListener('change', (e) => {

@@ -202,6 +202,80 @@ function filterStations(stations, allStations) {
     .filter((st) => st.items.length || st.extras.length);
 }
 
+// ---------- food restriction tags ----------
+// The dining site labels every dish with allergens and diet claims (the same
+// ones in its "My Menu Preferences" panel). IDs -> the short tags we save.
+const ALLERGEN_TAGS = {
+  39: 'egg', 42: 'fish', 45: 'milk', 48: 'peanut', 51: 'sesame',
+  54: 'shellfish', 57: 'soy', 60: 'treenut', 63: 'wheat',
+};
+const ALLERGEN_WORDS = {
+  eggs: 'egg', fish: 'fish', milk: 'milk', peanuts: 'peanut', sesame: 'sesame',
+  shellfish: 'shellfish', soy: 'soy', 'tree nuts': 'treenut', wheat: 'wheat',
+};
+const DIET_TAGS = { 96: 'vegan', 99: 'vegetarian', 78: 'gf', 133: 'halal' };
+
+// The site has no beef / pork / poultry / seafood labels, so these are worked
+// out from the dish name, description and ingredient list (best effort).
+// Ambiguous meats (hot dog, pepperoni, meatballs...) count as both beef and pork.
+const MEAT_WORDS = {
+  beef: /\bbeef|steak|brisket|hamburger|cheeseburger|\bburger|meatball|meatloaf|pastrami|bulgogi|carne asada|barbacoa|short rib|sirloin|\bveal\b|pot roast|sloppy joe|bolognese|meat sauce|meat lover|cheesesteak|\bgyro|pepperoni|hot dog|salami|bologna|corned/,
+  pork: /\bpork|bacon|\bham\b|sausage|pepperoni|prosciutto|salami|chorizo|carnitas|pancetta|hot dog|bratwurst|\blard\b|\bribs?\b|al pastor|meat lover|bologna|kielbasa|andouille|meatball/,
+  poultry: /chicken|turkey|\bduck\b|poultry|\bwings?\b/,
+  seafood: /fish|shrimp|salmon|\btuna|\bcod\b|tilapia|\bcrab|lobster|\bclams?\b|seafood|anchov|sushi|\bpoke\b|mahi|pollock|scallop|oyster|calamari|mussel|prawn|surimi|sardine/,
+};
+// Phrases that would otherwise trip the wrong meat (e.g. "turkey bacon" is not pork).
+const NOT_PORK = /(turkey|chicken|beef|veggie|vegan|plant[- ]based) (bacon|sausage|ham|pepperoni|hot dog|frank|chorizo|meatball)s?|rib meat|hot dog (bun|roll)s?/g;
+const NOT_BEEF = /(turkey|chicken|veggie|vegan|black bean|plant[- ]based|salmon|pork) (burger|meatball|hot dog|pepperoni|chili)s?|beefsteak tomato|(hamburger|burger|hot dog) (bun|roll)s?|steak (seasoning|sauce|fries|spice)|steak[- ]cut|(cauliflower|portobello|mushroom|tofu) steak/g;
+const MEATLESS_NAME = /plant[- ]based|vegan|veggie|vegetarian|meatless|impossible|beyond|gardenburger|just egg|\btofu/;
+
+const asList = (v) => (v == null || v === '' ? [] : [].concat(v)).map(String);
+
+// Tags for one dish. `info` is what the site sent for it (may be undefined).
+function tagsFor(name, description, info) {
+  const tags = new Set();
+  if (!info) tags.add('noinfo'); // couldn't match this dish to the site's data
+  for (const id of asList(info?.allergens)) if (ALLERGEN_TAGS[id]) tags.add(ALLERGEN_TAGS[id]);
+  const statement = (info?.statement || '').toLowerCase();
+  if (statement.startsWith('contains')) {
+    const listed = statement.replace(/^contains:?/, '').split(',').map((w) => w.trim());
+    for (const word of listed) if (ALLERGEN_WORDS[word]) tags.add(ALLERGEN_WORDS[word]);
+  }
+  if (!info || /not available/.test(statement)) tags.add('allergen?'); // site says info is incomplete
+  for (const id of asList(info?.diets)) if (DIET_TAGS[id]) tags.add(DIET_TAGS[id]);
+  if (tags.has('vegan')) tags.add('vegetarian');
+
+  const meatless = tags.has('vegetarian') || MEATLESS_NAME.test(name.toLowerCase());
+  if (!meatless) {
+    const text = `${name} ${description || ''} ${info?.ingredients || ''}`.toLowerCase();
+    if (MEAT_WORDS.beef.test(text.replace(NOT_BEEF, ' '))) tags.add('beef');
+    if (MEAT_WORDS.pork.test(text.replace(NOT_PORK, ' '))) tags.add('pork');
+    if (MEAT_WORDS.poultry.test(text)) tags.add('poultry');
+    if (MEAT_WORDS.seafood.test(text.replace(/goldfish/g, ' '))) tags.add('seafood');
+  }
+  if (tags.has('fish') || tags.has('shellfish')) tags.add('seafood');
+  return [...tags];
+}
+
+// Remember what the page received about each dish (keyed by dish name).
+function indexRecipes(json, infoByName) {
+  const attr = (item, name) => item.attributes?.find((a) => a.name === name)?.value;
+  for (const item of json?.data?.getLocationRecipes?.products?.items || []) {
+    const info = {
+      allergens: attr(item, 'allergens_intolerances'),
+      statement: attr(item, 'allergen_statement'),
+      diets: attr(item, 'recipe_attributes'),
+      ingredients: attr(item, 'recipe_ingredients'),
+    };
+    for (const n of [item.name, attr(item, 'marketing_name')]) if (n) infoByName.set(norm(n), info);
+  }
+}
+
+function tagStations(stations, infoByName) {
+  const tag = (it) => ({ ...it, tags: tagsFor(it.name, it.description, infoByName.get(norm(it.name))) });
+  return stations.map((st) => ({ ...st, items: st.items.map(tag), extras: st.extras.map(tag) }));
+}
+
 // ---------- finding the dining halls ----------
 async function findDiningHalls(browser) {
   const page = await browser.newPage();
@@ -387,6 +461,15 @@ async function scrapeLocation(browser, hall, opts, today) {
     (['image', 'media', 'font'].includes(route.request().resourceType())
       ? route.abort() : route.continue()));
   const page = await context.newPage();
+  // The page downloads details for each dish (allergens, diet labels,
+  // ingredients) along with the menu. Keep them for the food-restriction tags.
+  const infoByName = new Map();
+  const pendingInfo = [];
+  page.on('response', (res) => {
+    if (res.url().includes('getLocationRecipes')) {
+      pendingInfo.push(res.json().then((json) => indexRecipes(json, infoByName)).catch(() => {}));
+    }
+  });
   try {
     console.log(`${tag} opening ${url}`);
     await doAndWaitForMenu(page, () =>
@@ -431,7 +514,9 @@ async function scrapeLocation(browser, hall, opts, today) {
             // The site sometimes lists a meal period but hasn't posted its menu yet.
             const noMenu = await page.getByText('no menus available for this meal period')
               .first().isVisible().catch(() => false);
-            const stations = noMenu ? [] : filterStations(await readMenu(page), opts.allStations);
+            const menu = noMenu ? [] : await readMenu(page);
+            await Promise.all(pendingInfo);
+            const stations = filterStations(tagStations(menu, infoByName), opts.allStations);
             day.meals.push({ meal, ...(noMenu && { note: NO_MENU_NOTE }), stations });
           }
         } else if (!shown && !day.closed) {
@@ -515,8 +600,9 @@ function toMarkdown(meta, locations) {
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
 
 // Bump when the saved format changes, so older files aren't merged in.
-// (2 = dates read from the page, closed days and opening hours included.)
-const FORMAT_VERSION = 2;
+// (2 = dates read from the page, closed days and opening hours included;
+//  3 = every dish has food-restriction tags.)
+const FORMAT_VERSION = 3;
 
 // Website mode: one JSON file per hall plus index.json listing the halls.
 // If a hall (or some of its days) failed this run, the previous data is kept.

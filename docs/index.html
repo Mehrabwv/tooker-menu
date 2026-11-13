@@ -31,7 +31,7 @@
         </div>
         <p id="status" class="status" hidden></p>
       </div>
-      <button id="settingsBtn" class="icon-btn" type="button" aria-label="Choose stations">
+      <button id="settingsBtn" class="icon-btn" type="button" aria-label="Stations and food restrictions">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
           <path fill="currentColor" d="M3 6h11.2a3 3 0 0 1 5.6 0H21v2h-1.2a3 3 0 0 1-5.6 0H3V6zm14 2a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM3 16h3.2a3 3 0 0 1 5.6 0H21v2h-9.2a3 3 0 0 1-5.6 0H3v-2zm6 2a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
         </svg>
@@ -62,8 +62,22 @@
         <input type="checkbox" id="hideAlways">
         <span>Hide always-available pizzas (cheese, pepperoni)</span>
       </label>
+      <h2>Food restrictions</h2>
+      <p class="hint">These apply at every dining hall.</p>
+      <h3>Hide dishes with</h3>
+      <div id="avoidMeats" class="check-grid"></div>
+      <h3>Hide dishes containing these allergens</h3>
+      <div id="avoidAllergens" class="check-grid"></div>
+      <h3>Only show dishes labeled</h3>
+      <div id="requireDiets" class="check-grid"></div>
+      <p class="hint">
+        Allergen, vegan, vegetarian, gluten free and halal labels come from the dining site.
+        Beef, pork, poultry and seafood are worked out from each dish's name and ingredients,
+        so they can be wrong. Kitchens share equipment and recipes change: if you have an
+        allergy, always confirm with the dining hall staff.
+      </p>
       <div class="dialog-actions">
-        <button type="button" id="resetBtn" class="btn-ghost">Reset</button>
+        <button type="button" id="resetBtn" class="btn-ghost">Reset all</button>
         <button value="done" class="btn">Done</button>
       </div>
     </form>
