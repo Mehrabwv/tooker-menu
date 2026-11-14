@@ -1,6 +1,6 @@
 {
-  "name": "Dining Hall Menus",
-  "short_name": "Dining Menus",
+  "name": "ASU Dining Hall Tracker",
+  "short_name": "ASU Dining",
   "description": "Daily menus for the ASU Tempe dining halls, with your favorite stations first.",
   "start_url": "./",
   "scope": "./",

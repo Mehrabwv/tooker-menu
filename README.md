@@ -1,4 +1,4 @@
-# Dining Hall Menus
+# ASU Dining Hall Tracker
 
 A phone-friendly web app showing the daily menus for every **ASU Tempe dining hall**:
 Barrett, Hassayampa, HIDA, Manzanita, Pitchforks and Tooker House. It covers every

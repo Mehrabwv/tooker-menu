@@ -1,4 +1,4 @@
-// Dining Hall Menus web app
+// ASU Dining Hall Tracker web app
 // Loads menus/index.json (the list of halls) and menus/<hall>.json, which the
 // GitHub Action rewrites twice a day, and shows them.
 

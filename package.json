@@ -1,5 +1,5 @@
 {
-  "name": "tooker-menu",
+  "name": "asu-dining-hall-tracker",
   "version": "1.0.0",
   "description": "Phone web app + scraper for the ASU Tempe dining hall menus (every hall, every meal period).",
   "main": "scraper.js",
