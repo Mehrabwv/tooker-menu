@@ -126,26 +126,31 @@ const RESTRICTIONS = {
 const ALLERGEN_CODES = new Set(RESTRICTIONS.allergens.map(([code]) => code));
 const hasRestrictions = () => prefs.avoid.length > 0 || prefs.require.length > 0;
 
-// 'hide' = conflicts with your restrictions, 'warn' = can't be sure, 'ok' = fine.
-function checkDish(dish) {
-  if (!hasRestrictions()) return 'ok';
+// Reasons a dish may not fit your restrictions, e.g. ['may contain pork',
+// 'not labeled halal']. Dishes are never hidden, only flagged, because the
+// dining site's labels (and the guesses made from them) can be wrong.
+function dishWarnings(dish) {
+  if (!hasRestrictions()) return [];
   const tags = dish.tags;
-  if (!tags) return 'warn'; // menu saved before tags existed
-  if (prefs.avoid.some((t) => tags.includes(t))) return 'hide';
-  if (prefs.require.some((t) => !tags.includes(t))) return 'hide';
+  if (!tags) return ['no ingredient info']; // menu saved before tags existed
+  const label = (code) => Object.values(RESTRICTIONS).flat().find(([c]) => c === code)[1].toLowerCase();
+  const reasons = [];
+  for (const code of prefs.avoid) {
+    // Allergens are the site's own labels; meats are worked out from the text.
+    if (tags.includes(code)) reasons.push(`${ALLERGEN_CODES.has(code) ? 'contains' : 'may contain'} ${label(code)}`);
+  }
+  for (const code of prefs.require) if (!tags.includes(code)) reasons.push(`not labeled ${label(code)}`);
   // The site says this dish's allergen list is incomplete.
-  if (tags.includes('allergen?') && prefs.avoid.some((t) => ALLERGEN_CODES.has(t))) return 'warn';
-  return 'ok';
+  if (tags.includes('allergen?') && prefs.avoid.some((t) => ALLERGEN_CODES.has(t))) {
+    reasons.push('allergen info not available');
+  }
+  return reasons;
 }
 
-let hiddenCount = 0; // dishes hidden by restrictions in the meal on screen
-
 function visibleStations(meal) {
-  hiddenCount = 0;
-  const allowed = (list) => list.flatMap((dish) => {
-    const verdict = checkDish(dish);
-    if (verdict === 'hide') { hiddenCount++; return []; }
-    return [verdict === 'warn' ? { ...dish, warn: true } : dish];
+  const allowed = (list) => list.map((dish) => {
+    const warnings = dishWarnings(dish);
+    return warnings.length ? { ...dish, warnings } : dish;
   });
   const keep = new Set(activeStations().map(norm));
   const skipRules = prefs.hideAlways ? Object.entries(index?.preferences?.skipItems || {}) : [];
@@ -290,13 +295,9 @@ function render() {
   if (meal.note) { show(hoursLine, message('No menu posted for this meal yet.')); return; }
 
   const stations = visibleStations(meal);
-  const hiddenNote = hiddenCount ? el('p', { class: 'hidden-note' },
-    `${hiddenCount} ${hiddenCount === 1 ? 'dish' : 'dishes'} hidden by your food restrictions. `,
-    el('button', { class: 'link', type: 'button', onclick: openSettings }, 'Change')) : null;
   if (!stations.length) {
     show(hoursLine, el('div', { class: 'empty' },
-      el('p', {}, hiddenCount ? `Nothing at ${meal.meal} fits your food restrictions at these stations.`
-        : `Nothing from your stations at ${meal.meal}.`),
+      el('p', {}, `Nothing from your stations at ${meal.meal}.`),
       el('button', { class: 'btn', type: 'button', onclick: openSettings }, 'Change settings')));
     return;
   }
@@ -306,19 +307,19 @@ function render() {
       t.includes('gf') ? 'Gluten free' : null, t.includes('halal') ? 'Halal' : null].filter(Boolean);
     return list.length ? el('p', { class: 'badges' }, list.map((b) => el('span', {}, b))) : null;
   };
-  const warning = (dish) => (dish.warn
-    ? el('p', { class: 'warn' }, 'Allergen info not available for this dish. Ask the staff.') : null);
+  const sentence = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+  const warning = (dish) => (dish.warnings
+    ? el('p', { class: 'warn' }, `\u26A0 ${sentence(dish.warnings.join(' \u00B7 '))}`) : null);
   show(hoursLine, ...stations.map((s) => el('section', { class: 'station' },
     el('h2', {}, s.station),
-    s.items.length ? el('ul', { class: 'items' }, s.items.map((i) => el('li', { class: 'item' },
+    s.items.length ? el('ul', { class: 'items' }, s.items.map((i) => el('li', { class: i.warnings ? 'item flagged' : 'item' },
       el('div', { class: 'item-head' },
         el('span', { class: 'name' }, i.name),
         i.calories != null ? el('span', { class: 'cal' }, `${i.calories} cal`) : null),
       i.description ? el('p', { class: 'desc' }, i.description) : null,
       badges(i), warning(i)))) : null,
     s.extras.length ? el('p', { class: 'extras' }, el('b', {}, 'Also: '),
-      s.extras.map((e) => e.name + (e.warn ? ' (allergen info not available)' : '')).join(', ')) : null)),
-  hiddenNote);
+      s.extras.map((e) => e.name + (e.warnings ? ` (\u26A0 ${e.warnings.join(', ')})` : '')).join(', ')) : null)));
 }
 
 // ---------- station settings (per hall) ----------

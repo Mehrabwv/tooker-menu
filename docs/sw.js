@@ -1,7 +1,7 @@
 // Service worker: lets the home-screen app open even with no signal.
 // Strategy: always try the network first (fresh menu, app updates) and fall
 // back to the last saved copy when offline.
-const CACHE = 'menus-v5';
+const CACHE = 'menus-v6';
 const APP_FILES = [
   './', 'index.html', 'style.css', 'app.js', 'menus/index.json', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',

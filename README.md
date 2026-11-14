@@ -28,15 +28,15 @@ holidays and breaks, using the opening-hours schedule published on each hall's p
 
 The ⚙ button also has a **Food restrictions** section that applies at every hall:
 
-- **Hide dishes with:** beef, pork, chicken & turkey, fish & shellfish
-- **Hide dishes containing these allergens:** eggs, fish, milk, peanuts, sesame, shellfish,
+- **Warn about dishes with:** beef, pork, chicken & turkey, fish & shellfish
+- **Warn about these allergens:** eggs, fish, milk, peanuts, sesame, shellfish,
   soy, tree nuts, wheat (the nine the ASU dining site tracks)
-- **Only show dishes labeled:** vegetarian, vegan, gluten free, halal
+- **Warn when a dish is not labeled:** vegetarian, vegan, gluten free, halal
 
 Allergen and diet labels are the dining site's own. Beef, pork, poultry and seafood are
 worked out by `tagsFor()` in `scraper.js` from each dish's name, description and
-ingredient list, so they are best effort. Dishes whose allergen list the site marks as
-incomplete are shown with a warning instead of being hidden. This is a convenience
+ingredient list, so they are best effort. Nothing is ever hidden: a dish that may not fit gets a warning line such as
+"May contain pork · Not labeled halal", because the site's labels aren't always accurate. This is a convenience
 filter, not a safety guarantee: with an allergy, always confirm with dining hall staff.
 
 ## Put it on your phone like an app

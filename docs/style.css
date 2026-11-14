@@ -11,6 +11,8 @@
   --tab: #ffffff;
   --tab-text: #3b3638;
   --accent: #8c1d40;
+  --warn-bg: #fff1cf;
+  --warn-text: #7a4a00;
   color-scheme: light;
 }
 
@@ -24,6 +26,8 @@
     --tab: #262225;
     --tab-text: #e4dfe2;
     --accent: #c0416a;
+    --warn-bg: #3d2f0d;
+    --warn-text: #ffd27a;
     color-scheme: dark;
   }
 }
@@ -346,6 +350,17 @@ dialog h3 { margin: 14px 0 2px; font-size: 14px; }
   font-size: 12px;
   font-weight: 600;
 }
-.warn { margin: 6px 0 0; color: var(--accent); font-size: 13px; font-weight: 600; }
+.warn {
+  display: inline-block;
+  margin: 6px 0 0;
+  padding: 3px 9px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 13px;
+  font-weight: 600;
+}
 .hidden-note { margin: 4px 0 12px; color: var(--muted); font-size: 13px; text-align: center; }
 .link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+
+.item.flagged .name { color: var(--muted); }
